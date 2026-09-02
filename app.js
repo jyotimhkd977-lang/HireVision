@@ -18,52 +18,112 @@ function setAuth(mode){
   document.querySelectorAll('.auth-toggle button').forEach(b=> b.classList.toggle('active', b.dataset.auth===mode));
 }
 
-function runPrediction(){
-  const prog = +document.getElementById('out-prog').textContent;
-  const apt = +document.getElementById('out-apt').textContent;
-  const comm = +document.getElementById('out-comm').textContent;
-  const soft = +document.getElementById('out-soft').textContent;
-  const code = +document.getElementById('out-code').textContent;
-  const proj = +document.getElementById('in-proj').value;
-  const intern = +document.getElementById('in-intern').value;
-  const cert = +document.getElementById('in-cert').value;
-  const hack = +document.getElementById('in-hack').value;
+function getNumberValue(id, fallback = 0) {
+  const el = document.getElementById(id);
+  const rawValue = el?.value ?? el?.textContent ?? fallback;
+  const value = Number(rawValue);
+  return Number.isFinite(value) ? value : fallback;
+}
 
-  // Classifier: raw score feeds a logistic function, giving a confidence (0-1)
-  // that the model uses to decide the class label — Placed or Not Placed.
-  const raw = (prog+apt+comm+soft+code)/5*7 + proj*3 + intern*6 + cert*2 + hack*3;
-  const z = (raw - 62) / 10; // centered around the decision boundary
-  const confidence = 1 / (1 + Math.exp(-z));
-  const confidencePct = Math.max(3, Math.min(98, Math.round(confidence * 100)));
-  const isPlaced = confidence >= 0.5;
+function normalizeBranch(value) {
+  const branch = String(value || 'CSE').trim();
+  const lookup = {
+    cse: 'CSE',
+    'cse-aiml': 'CSE-AIML',
+    'cse aiml': 'CSE-AIML',
+    'cse-ds': 'CSE-DS',
+    'cse ds': 'CSE-DS',
+    'cse-cybersecurity': 'CSE-CyberSecurity',
+    'cse cybersecurity': 'CSE-CyberSecurity',
+    ece: 'ECE',
+    'ece-vlsi': 'ECE-VLSI',
+    'ece vlsi': 'ECE-VLSI',
+    eee: 'EEE',
+    mechanical: 'Mechanical',
+    civil: 'Civil',
+    'aircraft & maintainance': 'Aircraft & Maintainance',
+    'aircraft and maintainance': 'Aircraft & Maintainance',
+    biotech: 'Biotech',
+    bca: 'BCA',
+    mca: 'MCA',
+    bba: 'BBA',
+    mba: 'MBA',
+    it: 'CSE'
+  };
+  return lookup[branch.toLowerCase()] || branch;
+}
 
+function buildPredictionPayload() {
+  return {
+    Age: getNumberValue('age', 21),
+    Gender: document.getElementById('gender')?.value || 'Female',
+    Branch: normalizeBranch(document.getElementById('branch')?.value || 'CSE'),
+    CGPA: getNumberValue('cgpa', 8.4),
+    Tenth_Percentage: getNumberValue('tenth-percent', 92),
+    Twelfth_Percentage: getNumberValue('twelfth-percent', 88),
+    Backlogs: getNumberValue('backlogs', 0),
+    Attendance: getNumberValue('attendance', 91),
+    Programming_Skill: getNumberValue('programming-skill', 7),
+    Aptitude_Score: getNumberValue('aptitude-score', 6),
+    Communication_Skill: getNumberValue('communication-skill', 6),
+    Soft_Skills: getNumberValue('soft-skills', 7),
+    Coding_Rating: getNumberValue('coding-rating', 7),
+    Projects: getNumberValue('in-proj', 3),
+    Internships: getNumberValue('in-intern', 1),
+    Certifications: getNumberValue('in-cert', 2),
+    Hackathons: getNumberValue('in-hack', 0)
+  };
+}
+
+function renderPredictionResult(data) {
+  const verdict = data.prediction || 'Not Placed';
+  const confidence = Math.round(Number(data.confidence || 0));
   const gaugeVerdict = document.getElementById('gauge-verdict');
-  gaugeVerdict.textContent = isPlaced ? 'Placed' : 'Not Placed';
+  const isPlaced = verdict === 'Placed';
+
+  gaugeVerdict.textContent = verdict;
   gaugeVerdict.classList.toggle('placed', isPlaced);
   gaugeVerdict.classList.toggle('notplaced', !isPlaced);
-
-  document.getElementById('gauge-confidence').textContent =
-    `${confidencePct}% confidence`;
+  document.getElementById('gauge-confidence').textContent = `${confidence}% confidence`;
 
   const stampEl = document.getElementById('stamp-el');
-  if(isPlaced){
-    stampEl.textContent = 'Placed';
-    stampEl.classList.remove('negative');
-  } else {
-    stampEl.textContent = 'Not Placed';
-    stampEl.classList.add('negative');
+  stampEl.textContent = verdict;
+  stampEl.classList.toggle('negative', !isPlaced);
+
+  const remarks = Array.isArray(data.tips) && data.tips.length ? data.tips : ['Your profile is well balanced — keep refinement steady through placement season.'];
+  document.getElementById('remarks-list').innerHTML = remarks.slice(0, 3).map(t => `<li>${t}</li>`).join('');
+}
+
+async function runPrediction(){
+  const payload = buildPredictionPayload();
+  const submitBtn = document.querySelector('#view-predict .btn-primary');
+  const originalText = submitBtn.textContent;
+
+  submitBtn.disabled = true;
+  submitBtn.textContent = 'Evaluating...';
+
+  try {
+    const response = await fetch('http://127.0.0.1:5000/api/predict', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data.error || 'Prediction request failed.');
+    }
+
+    renderPredictionResult(data);
+    showView('result');
+  } catch (error) {
+    const tips = [error.message || 'The prediction service is currently unavailable.'];
+    renderPredictionResult({ prediction: 'Not Placed', confidence: 0, tips });
+    showView('result');
+  } finally {
+    submitBtn.disabled = false;
+    submitBtn.textContent = originalText;
   }
-
-  const tips = [];
-  if(apt < 7) tips.push('Aptitude score trails the rest of your profile — a weekly mock test would close this fastest.');
-  if(intern < 2) tips.push('One more internship would meaningfully raise your placement odds.');
-  if(hack < 1) tips.push('Sign up for a coding contest or hackathon; recruiters weight this heavily.');
-  if(comm < 7) tips.push('Book a mock-interview slot with the career cell to sharpen communication.');
-  if(cert < 2) tips.push('Add a relevant certification in your core stack to round out your profile.');
-  if(tips.length === 0) tips.push('Your profile is well balanced — keep attendance and CGPA steady through placement season.');
-
-  document.getElementById('remarks-list').innerHTML = tips.slice(0,3).map(t => `<li>${t}</li>`).join('');
-  showView('result');
 }
 
 let chartsInit = false;

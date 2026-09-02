@@ -179,25 +179,25 @@
       <div class="omr-section">
         <h4>Part I — Academics</h4>
         <div class="field-grid">
-          <div><label>Age</label><input type="number" value="21"></div>
-          <div><label>Gender</label><select><option>Female</option><option>Male</option><option>Other</option></select></div>
-          <div><label>Branch</label><select><option>CSE</option><option>ECE</option><option>Mech</option><option>Civil</option><option>IT</option></select></div>
-          <div><label>CGPA</label><input type="number" step="0.01" value="8.4"></div>
-          <div><label>10th Percentage</label><input type="number" value="92"></div>
-          <div><label>12th Percentage</label><input type="number" value="88"></div>
-          <div><label>Backlogs</label><input type="number" value="0"></div>
-          <div><label>Attendance %</label><input type="number" value="91"></div>
+          <div><label>Age</label><input id="age" type="number" value="21"></div>
+          <div><label>Gender</label><select id="gender"><option>Female</option><option>Male</option><option>Other</option></select></div>
+          <div><label>Branch</label><select id="branch"><option>CSE</option><option>CSE-AIML</option><option>CSE-DS</option><option>CSE-CyberSecurity</option><option>ECE</option><option>ECE-VLSI</option><option>EEE</option><option>Mechanical</option><option>Civil</option><option>Aircraft & Maintainance</option><option>Biotech</option><option>BCA</option><option>MCA</option><option>BBA</option><option>MBA</option></select></div>
+          <div><label>CGPA</label><input id="cgpa" type="number" step="0.01" value="8.4"></div>
+          <div><label>10th Percentage</label><input id="tenth-percent" type="number" value="92"></div>
+          <div><label>12th Percentage</label><input id="twelfth-percent" type="number" value="88"></div>
+          <div><label>Backlogs</label><input id="backlogs" type="number" value="0"></div>
+          <div><label>Attendance %</label><input id="attendance" type="number" value="91"></div>
         </div>
       </div>
 
       <div class="omr-section">
         <h4>Part II — Skills &amp; Aptitude</h4>
         <div class="field-grid">
-          <div class="slider-field"><div class="row-between"><label style="margin:0;">Programming Skill</label><output id="out-prog">7</output></div><input type="range" min="1" max="10" value="7" oninput="document.getElementById('out-prog').textContent=this.value"></div>
-          <div class="slider-field"><div class="row-between"><label style="margin:0;">Aptitude Score</label><output id="out-apt">6</output></div><input type="range" min="1" max="10" value="6" oninput="document.getElementById('out-apt').textContent=this.value"></div>
-          <div class="slider-field"><div class="row-between"><label style="margin:0;">Communication</label><output id="out-comm">6</output></div><input type="range" min="1" max="10" value="6" oninput="document.getElementById('out-comm').textContent=this.value"></div>
-          <div class="slider-field"><div class="row-between"><label style="margin:0;">Soft Skills</label><output id="out-soft">7</output></div><input type="range" min="1" max="10" value="7" oninput="document.getElementById('out-soft').textContent=this.value"></div>
-          <div class="slider-field"><div class="row-between"><label style="margin:0;">Coding Rating</label><output id="out-code">7</output></div><input type="range" min="1" max="10" value="7" oninput="document.getElementById('out-code').textContent=this.value"></div>
+          <div class="slider-field"><div class="row-between"><label style="margin:0;">Programming Skill</label><output id="out-prog">7</output></div><input id="programming-skill" type="range" min="1" max="10" value="7" oninput="document.getElementById('out-prog').textContent=this.value"></div>
+          <div class="slider-field"><div class="row-between"><label style="margin:0;">Aptitude Score</label><output id="out-apt">6</output></div><input id="aptitude-score" type="range" min="1" max="10" value="6" oninput="document.getElementById('out-apt').textContent=this.value"></div>
+          <div class="slider-field"><div class="row-between"><label style="margin:0;">Communication</label><output id="out-comm">6</output></div><input id="communication-skill" type="range" min="1" max="10" value="6" oninput="document.getElementById('out-comm').textContent=this.value"></div>
+          <div class="slider-field"><div class="row-between"><label style="margin:0;">Soft Skills</label><output id="out-soft">7</output></div><input id="soft-skills" type="range" min="1" max="10" value="7" oninput="document.getElementById('out-soft').textContent=this.value"></div>
+          <div class="slider-field"><div class="row-between"><label style="margin:0;">Coding Rating</label><output id="out-code">7</output></div><input id="coding-rating" type="range" min="1" max="10" value="7" oninput="document.getElementById('out-code').textContent=this.value"></div>
         </div>
       </div>
 

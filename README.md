@@ -60,13 +60,39 @@ HireVision/
 
 ## How to Run
 
-Because this is a front-end static site, you can run it in any of the following ways:
+### Backend + Frontend stack (recommended)
+1. Open a terminal in the project folder.
+2. Create a virtual environment:
+
+```bash
+python -m venv .venv
+.venv\Scripts\activate
+```
+
+3. Install dependencies:
+
+```bash
+pip install -r requirements.txt
+```
+
+4. Place your trained model file (`.pkl`, `.joblib`, or `.pickle`) in either the project root or the `models/` folder.
+5. Start the Flask server:
+
+```bash
+python app.py
+```
+
+6. Open the frontend in your browser at:
+
+```bash
+http://127.0.0.1:5000/
+```
 
 ### Option 1: Open directly in browser
 1. Go to the project folder
 2. Open `index.html` in your browser
 
-### Option 2: Run a local web server
+### Option 2: Run a local static server
 From the project folder, run:
 
 ```bash
@@ -86,9 +112,36 @@ http://localhost:8000
 3. Enter the dashboard
 4. Fill the placement evaluation form
 5. Submit for prediction
-6. Review the result and improvement remarks
-7. View the prediction history
-8. Use admin login to access the admin dashboard
+6. Frontend sends JSON to Flask `/api/predict`
+7. Flask validates the payload and loads the trained ML model
+8. Model predicts placement outcome and confidence
+9. Flask returns JSON with prediction, confidence and tips
+10. Frontend renders the result screen and suggestions
+11. View the prediction history
+12. Use admin login to access the admin dashboard
+
+## Backend API
+
+### `GET /health`
+Returns server health and model loading status.
+
+### `GET /api/model-info`
+Returns model metadata including the class name and expected feature list.
+
+### `POST /api/predict`
+Accepts JSON with the student details and returns:
+
+```json
+{
+  "prediction": "Placed",
+  "confidence": 82.4,
+  "model_path": "C:/.../models/student_placement_model.pkl",
+  "tips": [
+    "Aptitude score trails the rest of your profile — a weekly mock test would close this gap fastest.",
+    "One more internship would materially improve your placement probability."
+  ]
+}
+```
 
 ## Prediction Logic
 
@@ -111,10 +164,10 @@ This is a prototype logic used to simulate the workflow and UI experience.
 
 ## Notes
 
-- This project is currently a frontend demo/prototype.
-- There is no real backend or database connected yet.
-- The app uses static example data for demonstration purposes.
-- The design and flows are intended to reflect a realistic placement prediction system.
+- This project now includes a Flask backend for real prediction processing.
+- The API loads the trained ML model automatically from the project root or `models/` folder.
+- If no `.pkl`, `.joblib`, or `.pickle` file is present, the health route will still respond but prediction requests will return a structured error.
+- The app uses static example data for dashboard and admin views, while prediction results are dynamic from the model response.
 
 ## Credits
 
