@@ -140,6 +140,8 @@ def load_model():
         MODEL_ERROR = (
             "No trained ML model file found. Place your .pkl/.joblib file in the project root or in the models/ folder."
         )
+        MODEL = None
+        MODEL_PATH = None
         return None
 
     try:
@@ -150,7 +152,18 @@ def load_model():
                 MODEL = pickle.load(f)
         except Exception as exc:
             MODEL_ERROR = f"Could not load the model file '{model_path.name}': {exc}"
+            MODEL = None
+            MODEL_PATH = None
             return None
+
+    if not hasattr(MODEL, "predict"):
+        MODEL_ERROR = (
+            f"The file '{model_path.name}' is not a valid scikit-learn model object. "
+            "It appears to contain a notebook or text artifact rather than the trained estimator."
+        )
+        MODEL = None
+        MODEL_PATH = None
+        return None
 
     MODEL_PATH = model_path
     MODEL_ERROR = None
@@ -378,12 +391,15 @@ def fallback_predict(row: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def predict_from_payload(raw_payload: Dict[str, Any]) -> Dict[str, Any]:
+    global MODEL_ERROR
+
     if not isinstance(raw_payload, dict):
         raise ValueError("Request payload must be a JSON object.")
 
     missing = []
+    normalized_payload = collect_requested_values(raw_payload)
     for field in REQUIRED_FIELDS:
-        if field not in collect_requested_values(raw_payload):
+        if field not in normalized_payload:
             missing.append(field)
 
     if missing:
@@ -392,7 +408,9 @@ def predict_from_payload(raw_payload: Dict[str, Any]) -> Dict[str, Any]:
     row = build_feature_row(raw_payload)
     model = load_model()
     if model is None:
-        return fallback_predict(row)
+        fallback = fallback_predict(row)
+        fallback["warning"] = MODEL_ERROR or fallback.get("warning")
+        return fallback
 
     feature_names = list(getattr(model, "feature_names_in_", MODEL_FEATURES) or MODEL_FEATURES or PREFERRED_FEATURES)
     frame = convert_to_model_input(row, feature_names)
@@ -400,8 +418,12 @@ def predict_from_payload(raw_payload: Dict[str, Any]) -> Dict[str, Any]:
     try:
         prediction_value = model.predict(frame)
     except Exception:
-        fallback = pd.DataFrame([row], columns=PREFERRED_FEATURES)
-        prediction_value = model.predict(fallback)
+        try:
+            fallback = pd.DataFrame([row], columns=PREFERRED_FEATURES)
+            prediction_value = model.predict(fallback)
+        except Exception as exc:
+            MODEL_ERROR = f"Model prediction failed: {exc}"
+            return fallback_predict(row)
 
     prediction_label = determine_predicted_label(prediction_value)
     confidence = determine_confidence(model, prediction_value, frame)
