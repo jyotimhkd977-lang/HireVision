@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description"
+        content="HireVision AI — AI-powered campus placement prediction platform for students and placement coordinators. Evaluate your academic profile and discover your placement potential.">
+  <meta name="theme-color" content="#1C2B45">
+  <meta property="og:title"       content="HireVision AI — See Your Placement Potential">
+  <meta property="og:description" content="Know your odds before the interview panel does. Enter your academics, skills and internship record for a full placement readiness evaluation.">
+  <meta property="og:type"        content="website">
+
+  <title>HireVision AI — See Your Placement Potential</title>
+
+  <!-- Preconnect for Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+
+  <!-- Stylesheets (order matters) -->
+  <link rel="stylesheet" href="css/variables.css">
+  <link rel="stylesheet" href="css/global.css">
+  <link rel="stylesheet" href="css/nav.css">
+  <link rel="stylesheet" href="css/landing.css">
+  <link rel="stylesheet" href="css/pages.css">
+
+  <!-- Favicon / PWA icons (inline SVG data URI) -->
+  <link rel="icon" type="image/svg+xml"
+        href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><circle cx='16' cy='16' r='14' fill='%231C2B45' stroke='%23A9782F' stroke-width='2'/><text x='50%25' y='55%25' dominant-baseline='middle' text-anchor='middle' font-family='monospace' font-size='13' font-weight='700' fill='%23F1ECE0'>HV</text></svg>">
+</head>
+<body>
+
+  <!-- Skip to content (accessibility) -->
+  <a href="#app-main" class="skip-link"
+     style="position:absolute;top:-100%;left:var(--space-4);background:var(--color-navy);color:var(--color-paper);padding:var(--space-2) var(--space-4);border-radius:var(--radius-sm);z-index:9999;font-family:var(--font-mono);font-size:var(--text-xs);text-transform:uppercase;letter-spacing:0.1em;transition:top 0.2s;"
+     onfocus="this.style.top='var(--space-4)'"
+     onblur="this.style.top='-100%'">
+    Skip to content
+  </a>
+
+  <!-- Navigation (rendered by nav.js) -->
+  <div id="app-nav" role="banner"></div>
+
+  <!-- Main content area (SPA views are injected here) -->
+  <main id="app-main"
+        role="main"
+        tabindex="-1"
+        style="transition: opacity 0.3s ease, transform 0.3s ease; min-height: calc(100vh - var(--nav-height));">
+    <!-- Content rendered by router -->
+  </main>
+
+  <!-- Toast notifications -->
+  <div id="toast-container" role="status" aria-live="polite" aria-atomic="true"></div>
+
+  <!-- Chart.js CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+
+  <!-- Application scripts (load order: dependencies first) -->
+  <script src="js/config.js"></script>
+  <script src="js/state.js"></script>
+  <script src="js/router.js"></script>
+  <script src="js/nav.js"></script>
+  <script src="js/landing.js"></script>
+  <script src="js/auth.js"></script>
+  <script src="js/dashboard.js"></script>
+  <script src="js/predict.js"></script>
+  <script src="js/result.js"></script>
+  <script src="js/admin.js"></script>
+  <script src="js/app.js"></script>
+
+</body>
+</html>
