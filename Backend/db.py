@@ -1,39 +1,169 @@
 """
-HireVision AI — SQLite Database Module
-Manages student records, predictions, multi-year cohorts, and placement drives.
+HireVision AI database module.
+Manages student records, predictions, multi-year cohorts, and placement drives
+using SQLite locally or PostgreSQL in production.
 """
 
-import sqlite3
 import os
-import json
-from typing import List, Dict, Any, Optional
+import sqlite3
+from collections.abc import Mapping
 from datetime import datetime
+from pathlib import Path
 
-DB_PATH = os.path.join(os.path.dirname(__file__), "hirevision.db")
+try:
+    from dotenv import load_dotenv
+except ImportError:  # pragma: no cover - installed from requirements.txt
+    load_dotenv = None
+
+
+BACKEND_DIR = Path(__file__).resolve().parent
+PROJECT_DIR = BACKEND_DIR.parent
+if load_dotenv:
+    load_dotenv(PROJECT_DIR / ".env", override=False)
+
+DB_PATH = os.getenv("SQLITE_DB_PATH", str(BACKEND_DIR / "hirevision.db"))
+DATABASE_URL = (
+    os.getenv("DATABASE_URL")
+    or os.getenv("POSTGRES_PRISMA_URL")
+    or os.getenv("POSTGRES_URL")
+    or os.getenv("POSTGRES_URL_NON_POOLING")
+)
+DATABASE_BACKEND = os.getenv("DATABASE_BACKEND", "sqlite").lower().strip()
+USE_POSTGRES = DATABASE_BACKEND in {"postgres", "postgresql"}
+
+if USE_POSTGRES and not DATABASE_URL:
+    raise RuntimeError(
+        "DATABASE_BACKEND=postgres requires DATABASE_URL or a POSTGRES_* connection URL."
+    )
+
+try:
+    import psycopg
+except ImportError:  # pragma: no cover - only needed for PostgreSQL deployments
+    psycopg = None
+
+
+INTEGRITY_ERRORS = (sqlite3.IntegrityError,)
+if psycopg:
+    INTEGRITY_ERRORS = INTEGRITY_ERRORS + (psycopg.IntegrityError,)
+
+
+class HybridRow(Mapping):
+    """A row that supports both row[0] and row['column'] access."""
+
+    def __init__(self, columns, values):
+        self._data = dict(zip(columns, values))
+        self._values = tuple(values)
+
+    def __getitem__(self, key):
+        if isinstance(key, int):
+            return self._values[key]
+        return self._data[key]
+
+    def __iter__(self):
+        return iter(self._data)
+
+    def __len__(self):
+        return len(self._data)
+
+    def as_dict(self):
+        return dict(self._data)
+
+
+def row_to_dict(row):
+    """Convert SQLite, PostgreSQL, or HybridRow results to a plain dict."""
+    if isinstance(row, HybridRow):
+        return row.as_dict()
+    if hasattr(row, "keys"):
+        return {key: row[key] for key in row.keys()}
+    return dict(row)
+
+
+class PostgresCursor:
+    def __init__(self, cursor):
+        self._cursor = cursor
+        self._columns = []
+
+    @staticmethod
+    def _adapt_query(query):
+        # Existing application queries use SQLite's '?' placeholders.
+        return query.replace("?", "%s")
+
+    def execute(self, query, params=None):
+        self._cursor.execute(self._adapt_query(query), params or ())
+        self._columns = [column.name for column in (self._cursor.description or [])]
+        return self
+
+    def executemany(self, query, params_seq):
+        self._cursor.executemany(self._adapt_query(query), params_seq)
+        self._columns = [column.name for column in (self._cursor.description or [])]
+        return self
+
+    def _wrap(self, row):
+        return HybridRow(self._columns, row) if row is not None else None
+
+    def fetchone(self):
+        return self._wrap(self._cursor.fetchone())
+
+    def fetchall(self):
+        return [self._wrap(row) for row in self._cursor.fetchall()]
+
+    @property
+    def lastrowid(self):
+        # PostgreSQL has no cursor.lastrowid. All inserts that need the id use
+        # a sequence-backed primary key, so LASTVAL() is safe here.
+        self._cursor.execute("SELECT LASTVAL()")
+        return self._cursor.fetchone()[0]
+
+
+class PostgresConnection:
+    def __init__(self, connection):
+        self._connection = connection
+
+    def cursor(self):
+        return PostgresCursor(self._connection.cursor())
+
+    def commit(self):
+        self._connection.commit()
+
+    def rollback(self):
+        self._connection.rollback()
+
+    def close(self):
+        self._connection.close()
+
 
 def get_db():
+    if USE_POSTGRES:
+        if psycopg is None:
+            raise RuntimeError("psycopg is required when DATABASE_BACKEND=postgres.")
+        return PostgresConnection(psycopg.connect(DATABASE_URL))
+
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA foreign_keys = ON")
     return conn
 
 def init_db():
     """Create tables if they don't already exist and seed initial multi-year cohort."""
     conn = get_db()
     cursor = conn.cursor()
+    id_type = "BIGSERIAL PRIMARY KEY" if USE_POSTGRES else "INTEGER PRIMARY KEY AUTOINCREMENT"
+    id_ref_type = "BIGINT" if USE_POSTGRES else "INTEGER"
+    real_type = "DOUBLE PRECISION" if USE_POSTGRES else "REAL"
 
     # Students table
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS students (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        id {id_type},
         roll_no TEXT UNIQUE,
         name TEXT NOT NULL,
         email TEXT UNIQUE NOT NULL,
         branch TEXT NOT NULL,
         batch_year TEXT NOT NULL,
-        cgpa REAL NOT NULL,
-        tenth_pct REAL NOT NULL,
-        twelfth_pct REAL NOT NULL,
-        attendance_pct REAL NOT NULL,
+        cgpa {real_type} NOT NULL,
+        tenth_pct {real_type} NOT NULL,
+        twelfth_pct {real_type} NOT NULL,
+        attendance_pct {real_type} NOT NULL,
         active_backlogs INTEGER NOT NULL DEFAULT 0,
         programming_score INTEGER NOT NULL DEFAULT 7,
         aptitude_score INTEGER NOT NULL DEFAULT 6,
@@ -48,46 +178,46 @@ def init_db():
         english_fluency INTEGER NOT NULL DEFAULT 7,
         placed_status TEXT NOT NULL DEFAULT 'In-Progress',
         company_placed TEXT DEFAULT '',
-        package_lpa REAL DEFAULT 0.0,
-        confidence_pct REAL DEFAULT 75.0,
+        package_lpa {real_type} DEFAULT 0.0,
+        confidence_pct {real_type} DEFAULT 75.0,
         created_at TEXT NOT NULL
     );
-    """)
+    """.format(id_type=id_type, real_type=real_type))
 
     # Prediction assessments table
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS predictions (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        student_id INTEGER,
+        id {id_type},
+        student_id {id_ref_type},
         student_name TEXT NOT NULL,
         branch TEXT NOT NULL,
         batch_year TEXT NOT NULL,
-        cgpa REAL NOT NULL,
-        probability_placed REAL NOT NULL,
+        cgpa {real_type} NOT NULL,
+        probability_placed {real_type} NOT NULL,
         predicted_tier TEXT NOT NULL,
         weaknesses_json TEXT,
         suggestions_json TEXT,
         created_at TEXT NOT NULL,
         FOREIGN KEY (student_id) REFERENCES students (id) ON DELETE CASCADE
     );
-    """)
+    """.format(id_type=id_type, id_ref_type=id_ref_type, real_type=real_type))
 
     # Company placement drives table
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS company_drives (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        id {id_type},
         company_name TEXT NOT NULL,
         role TEXT NOT NULL,
-        min_cgpa REAL NOT NULL,
+        min_cgpa {real_type} NOT NULL,
         max_backlogs INTEGER NOT NULL DEFAULT 0,
         min_programming INTEGER NOT NULL DEFAULT 6,
         eligible_branches TEXT NOT NULL,
-        package_lpa REAL NOT NULL,
+        package_lpa {real_type} NOT NULL,
         drive_date TEXT NOT NULL,
         batch_year TEXT NOT NULL,
         status TEXT NOT NULL DEFAULT 'Upcoming'
     );
-    """)
+    """.format(id_type=id_type, real_type=real_type))
 
     conn.commit()
 
@@ -98,7 +228,8 @@ def init_db():
         seed_initial_data(conn)
 
     conn.close()
-    print(f"[HireVision DB] [OK] SQLite database initialized at: {DB_PATH}")
+    location = DATABASE_URL.split("?")[0] if USE_POSTGRES else DB_PATH
+    print(f"[HireVision DB] [OK] {DATABASE_BACKEND} database initialized: {location}")
 
 
 def seed_initial_data(conn):

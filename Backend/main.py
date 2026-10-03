@@ -15,26 +15,34 @@ import math
 import json
 from datetime import datetime
 
-# Import SQLite database module
+# Import database module. SQLite remains the local default; PostgreSQL is
+# selected with DATABASE_BACKEND=postgres in Render/Vercel environments.
 try:
-    from db import get_db, init_db, DB_PATH
+    from db import get_db, init_db, DATABASE_BACKEND, row_to_dict, INTEGRITY_ERRORS
 except ImportError:
-    from .db import get_db, init_db, DB_PATH
+    from .db import get_db, init_db, DATABASE_BACKEND, row_to_dict, INTEGRITY_ERRORS
 
 # ──────────────────────────────────────────────────────────
 # App setup
 # ──────────────────────────────────────────────────────────
 app = FastAPI(
     title="HireVision AI Prediction & Management API",
-    description="Campus placement prediction & SQLite student database backend for HireVision AI.",
+    description="Campus placement prediction & student database backend for HireVision AI.",
     version="2.0.0",
 )
 
-# Allow requests from the frontend (file:// and localhost)
+configured_origins = [
+    origin.strip()
+    for origin in os.getenv("CORS_ORIGINS", "*").split(",")
+    if origin.strip()
+]
+allow_all_origins = configured_origins == ["*"]
+
+# Allow requests from the frontend (file://, localhost, and the configured Vercel URL).
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
+    allow_origins=configured_origins,
+    allow_credentials=not allow_all_origins,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -284,10 +292,10 @@ async def root():
     conn.close()
 
     return {
-        "service": "HireVision AI SQLite Backend & ML Engine",
+        "service": "HireVision AI Backend & ML Engine",
         "version": "2.0.0",
         "status":  "running",
-        "database": "SQLite (hirevision.db)",
+        "database": DATABASE_BACKEND,
         "model": "loaded" if _model else "heuristic-engine",
         "total_students_in_db": student_count,
         "active_batches": batch_count
@@ -320,7 +328,7 @@ async def predict(req: PredictionRequest):
 
 
 # ──────────────────────────────────────────────────────────
-# Endpoints: Student Management (SQLite CRUD)
+# Endpoints: Student Management (SQLite/PostgreSQL CRUD)
 # ──────────────────────────────────────────────────────────
 @app.get("/api/students", summary="List students with multi-year & branch filters")
 async def get_students(
@@ -354,10 +362,10 @@ async def get_students(
     rows = cursor.fetchall()
     conn.close()
 
-    return [dict(row) for row in rows]
+    return [row_to_dict(row) for row in rows]
 
 
-@app.post("/api/students", summary="Add a new student to SQLite database")
+@app.post("/api/students", summary="Add a new student to the database")
 async def create_student(student: StudentCreate):
     conn = get_db()
     cursor = conn.cursor()
@@ -402,13 +410,15 @@ async def create_student(student: StudentCreate):
             student.problem_solving, student.english_fluency, student.placed_status,
             student.company_placed, student.package_lpa, conf_pct, datetime.now().isoformat()
         ))
-        conn.commit()
         new_id = cursor.lastrowid
+        # Read the sequence value before committing so this also works with
+        # Supabase's transaction-pooled PostgreSQL connection.
+        conn.commit()
         cursor.execute("SELECT * FROM students WHERE id = ?", (new_id,))
-        created = dict(cursor.fetchone())
+        created = row_to_dict(cursor.fetchone())
         conn.close()
         return {"status": "success", "message": "Student created successfully", "student": created}
-    except sqlite3.IntegrityError as e:
+    except INTEGRITY_ERRORS as e:
         conn.close()
         raise HTTPException(status_code=400, detail=f"Student with this roll number or email already exists: {e}")
     except Exception as e:
@@ -425,10 +435,10 @@ async def get_student(student_id: int):
     conn.close()
     if not row:
         raise HTTPException(status_code=404, detail="Student not found")
-    return dict(row)
+    return row_to_dict(row)
 
 
-@app.put("/api/students/{student_id}", summary="Update student in SQLite database")
+@app.put("/api/students/{student_id}", summary="Update student in the database")
 async def update_student(student_id: int, updates: StudentUpdate):
     conn = get_db()
     cursor = conn.cursor()
@@ -442,12 +452,12 @@ async def update_student(student_id: int, updates: StudentUpdate):
     update_dict = {k: v for k, v in updates.dict().items() if v is not None}
     if not update_dict:
         conn.close()
-        return {"status": "no_change", "student": dict(current)}
+        return {"status": "no_change", "student": row_to_dict(current)}
 
     # If academics or scores changed, recalculate confidence
     recalc_keys = {"cgpa", "tenth_pct", "twelfth_pct", "active_backlogs", "programming_score", "aptitude_score", "internships"}
     if any(k in update_dict for k in recalc_keys):
-        merged = {**dict(current), **update_dict}
+        merged = {**row_to_dict(current), **update_dict}
         req = PredictionRequest(
             CGPA=merged["cgpa"],
             field_10th=merged["tenth_pct"],
@@ -477,12 +487,12 @@ async def update_student(student_id: int, updates: StudentUpdate):
     conn.commit()
 
     cursor.execute("SELECT * FROM students WHERE id = ?", (student_id,))
-    updated = dict(cursor.fetchone())
+    updated = row_to_dict(cursor.fetchone())
     conn.close()
     return {"status": "success", "message": "Student updated successfully", "student": updated}
 
 
-@app.delete("/api/students/{student_id}", summary="Delete student from SQLite database")
+@app.delete("/api/students/{student_id}", summary="Delete student from the database")
 async def delete_student(student_id: int):
     conn = get_db()
     cursor = conn.cursor()
@@ -502,7 +512,7 @@ async def run_student_prediction(student_id: int):
         conn.close()
         raise HTTPException(status_code=404, detail="Student not found")
 
-    student = dict(s)
+    student = row_to_dict(s)
     req = PredictionRequest(
         CGPA=student["cgpa"],
         field_10th=student["tenth_pct"],
@@ -569,7 +579,8 @@ async def get_cohort_analytics():
         placed = cursor.fetchone()[0]
 
         cursor.execute("SELECT AVG(cgpa), AVG(confidence_pct), AVG(package_lpa) FROM students WHERE batch_year = ?", (b,))
-        avg_cgpa, avg_conf, avg_pkg = cursor.fetchone()
+        averages = cursor.fetchone()
+        avg_cgpa, avg_conf, avg_pkg = averages[0], averages[1], averages[2]
 
         stats[b] = {
             "total_students": total,
@@ -601,7 +612,7 @@ async def get_cohort_analytics():
     return {
         "cohorts": stats,
         "branches": branch_stats,
-        "database_type": "SQLite3 (hirevision.db)"
+        "database_type": DATABASE_BACKEND
     }
 
 
@@ -624,7 +635,7 @@ async def match_drive_eligibility(req: DriveMatchRequest):
 
     cursor.execute(query, params)
     rows = cursor.fetchall()
-    eligible = [dict(r) for r in rows]
+    eligible = [row_to_dict(r) for r in rows]
 
     cursor.execute("SELECT COUNT(*) FROM students WHERE batch_year = ?", (req.batch_year,))
     total_batch = cursor.fetchone()[0]
@@ -653,10 +664,10 @@ async def list_drives():
     cursor.execute("SELECT * FROM company_drives ORDER BY drive_date ASC")
     rows = cursor.fetchall()
     conn.close()
-    return [dict(r) for r in rows]
+    return [row_to_dict(r) for r in rows]
 
 
-@app.post("/api/admin/reset-db", summary="Re-seed SQLite database with default multi-year records")
+@app.post("/api/admin/reset-db", summary="Re-seed the database with default multi-year records")
 async def reset_database():
     conn = get_db()
     cursor = conn.cursor()
@@ -667,7 +678,7 @@ async def reset_database():
     conn.close()
 
     init_db()
-    return {"status": "success", "message": "SQLite database re-seeded with 2026, 2025, and 2024 cohorts."}
+    return {"status": "success", "message": f"{DATABASE_BACKEND} database re-seeded with 2026, 2025, and 2024 cohorts."}
 
 
 # ──────────────────────────────────────────────────────────
